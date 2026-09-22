@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+*/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Production build outputs
+dist/
+*/dist/
+build/
+*/build/
+out/
+*/out/
+
+# Python artifacts
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Foundry / Smart Contracts
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+broadcast/
+cache/
+
+# Environment files & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+
+# Logs
+*.log
+slither-output.log
+slither-report.json
+foundry-test-output.log
+
+# Operating System & Editor Files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo

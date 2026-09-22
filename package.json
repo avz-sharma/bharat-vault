@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@types/node": "^26.6.2",
+    "@zerodev/passkey-validator": "^5.6.0",
+    "@zerodev/sdk": "^5.5.10",
+    "permissionless": "^0.4.1"
+  }
+}
