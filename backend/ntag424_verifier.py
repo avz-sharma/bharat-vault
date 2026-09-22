@@ -25,20 +25,20 @@ import time
 from typing import Any
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.cmac import CMAC
 from cryptography.hazmat.primitives.ciphers.algorithms import AES
-from fastapi import FastAPI, HTTPException, Header, Depends
+from cryptography.hazmat.primitives.cmac import CMAC
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-_PICC_DATA_LEN = 16          # 16 bytes: 7-byte UID + 3-byte counter + 6-byte padding
-_UID_LEN = 7                 # NTAG 424 DNA 7-byte UID
-_CTR_LEN = 3                 # 24-bit read counter
-_IV = b"\x00" * 16           # AES-128-CBC IV per NXP SUN spec (zeros)
-_CMAC_TRUNCATED_LEN = 8      # SUN message uses first 8 bytes of full 16-byte CMAC
+_PICC_DATA_LEN = 16  # 16 bytes: 7-byte UID + 3-byte counter + 6-byte padding
+_UID_LEN = 7  # NTAG 424 DNA 7-byte UID
+_CTR_LEN = 3  # 24-bit read counter
+_IV = b"\x00" * 16  # AES-128-CBC IV per NXP SUN spec (zeros)
+_CMAC_TRUNCATED_LEN = 8  # SUN message uses first 8 bytes of full 16-byte CMAC
 
 # ---------------------------------------------------------------------------
 # In-memory stores (replace with DB / Supabase in production)
@@ -84,8 +84,8 @@ def _derive_session_key(master_key: bytes, sv_prefix: bytes, counter: int) -> by
         SessionKey = AES-128-ECB(MasterKey, SV)
     where SV = SV_PREFIX ‖ Counter (padded to 16 bytes).
     """
-    sv = sv_prefix + struct.pack("<I", counter)          # 4-byte LE counter
-    sv = sv.ljust(16, b"\x00")                           # pad to AES block
+    sv = sv_prefix + struct.pack("<I", counter)  # 4-byte LE counter
+    sv = sv.ljust(16, b"\x00")  # pad to AES block
     cipher = Cipher(algorithms.AES(master_key), modes.ECB())
     enc = cipher.encryptor()
     return enc.update(sv) + enc.finalize()
@@ -129,17 +129,17 @@ def generate_mock_tap(
         raise ValueError("Master key must be 16 bytes (AES-128)")
 
     if counter is None:
-        counter = int(time.time()) & 0x00FFFFFF          # 24-bit wrap
+        counter = int(time.time()) & 0x00FFFFFF  # 24-bit wrap
 
     # Build PICCData plaintext: UID (7) ‖ Counter (3 LE) ‖ padding (6)
-    ctr_bytes = struct.pack("<I", counter)[:_CTR_LEN]    # little-endian 24-bit
-    picc_plain = uid + ctr_bytes + b"\x00" * 6           # 16 bytes total
+    ctr_bytes = struct.pack("<I", counter)[:_CTR_LEN]  # little-endian 24-bit
+    picc_plain = uid + ctr_bytes + b"\x00" * 6  # 16 bytes total
 
     # Encrypt PICCData
     enc_picc = _aes128_cbc_encrypt(master_key, picc_plain)
 
     # Derive session key and compute CMAC
-    sv_prefix = b"\x3c\xc3\x00\x01"                     # NXP SV constant
+    sv_prefix = b"\x3c\xc3\x00\x01"  # NXP SV constant
     session_key = _derive_session_key(master_key, sv_prefix, counter)
     full_cmac = _aes128_cmac(session_key, enc_picc)
     truncated_cmac = full_cmac[:_CMAC_TRUNCATED_LEN]
@@ -193,18 +193,34 @@ def verify_ntag_tap(
         received_cmac = bytes.fromhex(cmac_hex)
         master_key = bytes.fromhex(master_key_hex)
     except ValueError as exc:
-        return {"valid": False, "uid": None, "counter": None,
-                "reason": f"Hex decode error: {exc}"}
+        return {
+            "valid": False,
+            "uid": None,
+            "counter": None,
+            "reason": f"Hex decode error: {exc}",
+        }
 
     if len(enc_picc) != 16:
-        return {"valid": False, "uid": None, "counter": None,
-                "reason": "Encrypted PICCData must be 16 bytes"}
+        return {
+            "valid": False,
+            "uid": None,
+            "counter": None,
+            "reason": "Encrypted PICCData must be 16 bytes",
+        }
     if len(received_cmac) != _CMAC_TRUNCATED_LEN:
-        return {"valid": False, "uid": None, "counter": None,
-                "reason": "CMAC must be 8 bytes (truncated)"}
+        return {
+            "valid": False,
+            "uid": None,
+            "counter": None,
+            "reason": "CMAC must be 8 bytes (truncated)",
+        }
     if len(master_key) != 16:
-        return {"valid": False, "uid": None, "counter": None,
-                "reason": "Master key must be 16 bytes"}
+        return {
+            "valid": False,
+            "uid": None,
+            "counter": None,
+            "reason": "Master key must be 16 bytes",
+        }
 
     # --- Step 1: Decrypt PICCData ---
     picc_plain = _aes128_cbc_decrypt(master_key, enc_picc)
@@ -222,27 +238,42 @@ def verify_ntag_tap(
 
     # --- Step 4: Constant-time compare ---
     if not hmac.compare_digest(expected_cmac, received_cmac):
-        return {"valid": False, "uid": uid_hex, "counter": counter,
-                "reason": "CMAC mismatch — possible cloning or key error"}
+        return {
+            "valid": False,
+            "uid": uid_hex,
+            "counter": counter,
+            "reason": "CMAC mismatch — possible cloning or key error",
+        }
 
     # --- Step 5: Replay protection ---
     tap_id = (uid_hex, counter)
     if tap_id in _seen_taps:
-        return {"valid": False, "uid": uid_hex, "counter": counter,
-                "reason": "Replay detected — counter already seen"}
+        return {
+            "valid": False,
+            "uid": uid_hex,
+            "counter": counter,
+            "reason": "Replay detected — counter already seen",
+        }
 
     last = _chip_registry.get(uid_hex, {}).get("last_counter", -1)
     if counter <= last:
-        return {"valid": False, "uid": uid_hex, "counter": counter,
-                "reason": f"Counter rollback: got {counter}, "
-                          f"expected > {last}"}
+        return {
+            "valid": False,
+            "uid": uid_hex,
+            "counter": counter,
+            "reason": f"Counter rollback: got {counter}, expected > {last}",
+        }
 
     _seen_taps.add(tap_id)
     if uid_hex in _chip_registry:
         _chip_registry[uid_hex]["last_counter"] = counter
 
-    return {"valid": True, "uid": uid_hex, "counter": counter,
-            "reason": "Cryptogram verified successfully"}
+    return {
+        "valid": True,
+        "uid": uid_hex,
+        "counter": counter,
+        "reason": "Cryptogram verified successfully",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -272,21 +303,27 @@ app = FastAPI(
     title="NTAG 424 DNA Physical-Asset Verifier",
     version="1.0.0",
     description="Binds NXP NTAG 424 DNA NFC chips to on-chain ERC-721 tokens "
-                "via AES-128 SUN cryptogram verification.",
+    "via AES-128 SUN cryptogram verification.",
 )
 
 
 # --- Request / Response Models ----
 
+
 class VerifyTapRequest(BaseModel):
     """Payload sent by the mobile app after an NFC tap."""
+
     enc_picc_data: str = Field(
-        ..., min_length=32, max_length=32,
+        ...,
+        min_length=32,
+        max_length=32,
         description="Encrypted PICCData (16 bytes, hex-encoded)",
         examples=["a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"],
     )
     cmac: str = Field(
-        ..., min_length=16, max_length=16,
+        ...,
+        min_length=16,
+        max_length=16,
         description="Truncated 8-byte CMAC (hex-encoded)",
         examples=["1a2b3c4d5e6f7a8b"],
     )
@@ -302,7 +339,9 @@ class VerifyTapResponse(BaseModel):
 
 class RegisterChipRequest(BaseModel):
     uid_hex: str = Field(
-        ..., min_length=14, max_length=14,
+        ...,
+        min_length=14,
+        max_length=14,
         description="7-byte chip UID (hex-encoded)",
     )
     token_id: int = Field(..., ge=0, description="ERC-721 token ID")
@@ -310,12 +349,17 @@ class RegisterChipRequest(BaseModel):
 
 class MockTapRequest(BaseModel):
     """Generate a mock NFC tap for testing."""
+
     uid_hex: str = Field(
-        ..., min_length=14, max_length=14,
+        ...,
+        min_length=14,
+        max_length=14,
         description="7-byte chip UID (hex-encoded)",
     )
     counter: int | None = Field(
-        None, ge=0, le=0xFFFFFF,
+        None,
+        ge=0,
+        le=0xFFFFFF,
         description="Optional explicit 24-bit counter",
     )
 
@@ -341,11 +385,12 @@ async def _require_api_key(x_api_key: str = Header(...)) -> str:
 
 _MASTER_KEY_HEX = os.environ.get(
     "NTAG_MASTER_KEY",
-    "00112233445566778899aabbccddeeff",          # ⚠️  demo-only default
+    "00112233445566778899aabbccddeeff",  # ⚠️  demo-only default
 )
 
 
 # --- Routes ---
+
 
 @app.post(
     "/api/v1/assets/verify-physical",
@@ -394,8 +439,7 @@ async def register_chip_route(
     _key: str = Depends(_require_api_key),
 ) -> dict[str, str]:
     register_chip(body.uid_hex, body.token_id)
-    return {"status": "registered", "uid": body.uid_hex,
-            "token_id": str(body.token_id)}
+    return {"status": "registered", "uid": body.uid_hex, "token_id": str(body.token_id)}
 
 
 @app.post(

@@ -2,15 +2,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.ntag424_verifier import (
-    app,
-    generate_mock_tap,
-    verify_ntag_tap,
-    register_chip,
-    lookup_token,
+    _API_KEY,
+    _MASTER_KEY_HEX,
     _chip_registry,
     _seen_taps,
-    _MASTER_KEY_HEX,
-    _API_KEY,
+    app,
+    generate_mock_tap,
+    lookup_token,
+    register_chip,
+    verify_ntag_tap,
 )
 
 
@@ -64,12 +64,16 @@ def test_counter_decremented_prevention():
     register_chip(test_uid, token_id=42)
 
     tap_high = generate_mock_tap(test_uid, _MASTER_KEY_HEX, counter=500)
-    res_high = verify_ntag_tap(tap_high["enc_picc_data"], tap_high["cmac"], _MASTER_KEY_HEX)
+    res_high = verify_ntag_tap(
+        tap_high["enc_picc_data"], tap_high["cmac"], _MASTER_KEY_HEX
+    )
     assert res_high["valid"] is True
 
     # Attempt lower counter tap
     tap_low = generate_mock_tap(test_uid, _MASTER_KEY_HEX, counter=400)
-    res_low = verify_ntag_tap(tap_low["enc_picc_data"], tap_low["cmac"], _MASTER_KEY_HEX)
+    res_low = verify_ntag_tap(
+        tap_low["enc_picc_data"], tap_low["cmac"], _MASTER_KEY_HEX
+    )
     assert res_low["valid"] is False
     assert "Counter rollback" in res_low["reason"]
 
