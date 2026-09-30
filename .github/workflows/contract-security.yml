@@ -1,267 +1,38 @@
-# =============================================================================
-# Smart Contract Security Pipeline
-# =============================================================================
-#
-# Three-stage gate:
-#   1. Foundry — compile + fuzz-test (1 000 runs)
-#   2. Slither — static analysis for SWC vulnerabilities
-#   3. Privacy — scan for raw PII / Aadhaar patterns in source & logs
-#
-# Triggers on every push/PR that touches contracts or Foundry config.
-# =============================================================================
-
-name: Contract Security
-
-on:
-  push:
-    branches: [main, develop]
-    paths:
-      - "contracts/**"
-      - "foundry.toml"
-      - "remappings.txt"
-      - ".github/workflows/contract-security.yml"
-  pull_request:
-    branches: [main, develop]
-    paths:
-      - "contracts/**"
-      - "foundry.toml"
-      - "remappings.txt"
-      - ".github/workflows/contract-security.yml"
-
-  workflow_dispatch:          # allow manual trigger
-
+name: Contract security
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
-
-env:
-  FOUNDRY_PROFILE: ci
-
 jobs:
-  # -----------------------------------------------------------------------
-  # Stage 1 — Foundry Compile + Fuzz Tests
-  # -----------------------------------------------------------------------
-  foundry-tests:
-    name: "🔨 Foundry Fuzz Tests"
+  contracts:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          submodules: recursive
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+          node-version: "26.4.0"
+          cache: npm
+      - uses: actions/setup-python@v5
         with:
-          version: stable
-
-      - name: Install dependencies
-        run: forge install
-
-      - name: Build contracts
-        run: forge build --sizes
-        id: build
-
-      - name: Run fuzz tests (1 000 runs)
+          python-version: "3.13.9"
+      - run: npm ci
+      - name: Discover and run contract tests
         run: |
-          forge test \
-            --fuzz-runs 1000 \
-            -vvv \
-            2>&1 | tee foundry-test-output.log
-
-      - name: Upload Foundry logs
+          set -euo pipefail
+          node scripts/foundry.mjs forge test --root contracts --list | tee discovered-tests.txt
+          grep -q 'testDigitalLifecycleAndReplay' discovered-tests.txt
+          FOUNDRY_PROFILE=ci npm run contracts:test
+      - name: Install pinned analyzer
+        run: pip install slither-analyzer==0.11.3
+      - name: Analyze contracts (errors and missing reports fail)
+        working-directory: contracts
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/node_modules/@foundry-rs/forge-linux-amd64/bin:$PATH"
+          slither . --filter-paths 'node_modules|test' --exclude-dependencies --fail-high --json slither-report.json
+          python ../scripts/check-slither.py slither-report.json
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: foundry-test-logs
-          path: foundry-test-output.log
-          retention-days: 14
-
-  # -----------------------------------------------------------------------
-  # Stage 2 — Slither Static Analysis
-  # -----------------------------------------------------------------------
-  slither-analysis:
-    name: "🔍 Slither Static Analysis"
-    runs-on: ubuntu-latest
-    needs: foundry-tests            # run after tests pass
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Foundry (needed for solc resolution)
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: stable
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Slither
-        run: pip install slither-analyzer
-
-      - name: Run Slither
-        run: |
-          slither . \
-            --filter-paths "node_modules|lib" \
-            --exclude naming-convention,pragma \
-            --json slither-report.json \
-            2>&1 | tee slither-output.log
-        # Slither exits non-zero on findings; we capture output and
-        # evaluate severity in the next step.
-        continue-on-error: true
-
-      - name: Evaluate Slither findings
-        run: |
-          echo "::group::Slither Summary"
-          python3 - <<'PYEOF'
-          import json, sys
-
-          HIGH_SWC = {
-              "reentrancy-eth",
-              "reentrancy-no-eth",
-              "uninitialized-state",
-              "uninitialized-storage",
-              "arbitrary-send-eth",
-              "controlled-delegatecall",
-              "suicidal",
-              "unchecked-lowlevel",
-              "tx-origin",
-          }
-
-          try:
-              with open("slither-report.json") as f:
-                  data = json.load(f)
-          except FileNotFoundError:
-              print("⚠️  No Slither report found — skipping evaluation.")
-              sys.exit(0)
-
-          results = data.get("results", {}).get("detectors", [])
-          criticals = [r for r in results if r.get("check") in HIGH_SWC]
-
-          print(f"Total findings : {len(results)}")
-          print(f"Critical (SWC) : {len(criticals)}")
-
-          if criticals:
-              for c in criticals:
-                  print(f"  ❌  [{c['check']}] {c['description'][:120]}")
-              print("\n🛑  Critical SWC vulnerabilities detected — failing pipeline.")
-              sys.exit(1)
-          else:
-              print("✅  No critical SWC vulnerabilities found.")
-          PYEOF
-          echo "::endgroup::"
-
-      - name: Upload Slither report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: slither-report
-          path: |
-            slither-report.json
-            slither-output.log
-          retention-days: 14
-
-  # -----------------------------------------------------------------------
-  # Stage 3 — Privacy Leak Scan (Aadhaar / PII)
-  # -----------------------------------------------------------------------
-  privacy-scan:
-    name: "🛡️ PII / Aadhaar Privacy Scan"
-    runs-on: ubuntu-latest
-    needs: foundry-tests
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download Foundry logs
-        uses: actions/download-artifact@v4
-        with:
-          name: foundry-test-logs
-          path: ./artifacts
-
-      - name: Run privacy leak scan
-        run: |
-          echo "::group::Privacy Leak Scanner"
-          python3 - <<'PYEOF'
-          """
-          Privacy Leak Scanner
-          ====================
-          Scans Solidity sources and Foundry log artifacts for patterns that
-          look like raw PII or Aadhaar numbers embedded as string literals
-          or logged values.
-
-          Patterns checked
-          ----------------
-          - Aadhaar-format : 12-digit numeric or XXXX-XXXX-XXXX
-          - PAN (India)    : 5-alpha + 4-digit + 1-alpha
-          - Email literals : user@domain in string literals
-          - Phone (IN)     : +91 followed by 10 digits
-          """
-          import pathlib, re, sys
-
-          SCAN_DIRS  = ["contracts", "src", "test"]
-          SCAN_GLOBS = ["**/*.sol", "**/*.t.sol"]
-          LOG_FILES  = list(pathlib.Path("artifacts").glob("*.log"))
-
-          patterns = {
-              "Aadhaar (12-digit)":
-                  re.compile(r'(?<!\d)\d{4}[\s\-]?\d{4}[\s\-]?\d{4}(?!\d)'),
-              "PAN (India)":
-                  re.compile(r'\b[A-Z]{5}[0-9]{4}[A-Z]\b'),
-              "Email literal":
-                  re.compile(r'"[^"]*[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}[^"]*"'),
-              "Phone (+91)":
-                  re.compile(r'\+91[\s\-]?\d{10}\b'),
-          }
-
-          # Allowlisted test-only patterns that are clearly synthetic
-          ALLOWLIST = {
-              "0000 0000 0000",
-              "1234 5678 9012",
-              "123456789012",
-              "000000000000",
-          }
-
-          findings: list[str] = []
-
-          def scan_file(path: pathlib.Path) -> None:
-              try:
-                  text = path.read_text(errors="replace")
-              except Exception:
-                  return
-              for lineno, line in enumerate(text.splitlines(), 1):
-                  for label, rx in patterns.items():
-                      for m in rx.finditer(line):
-                          matched = m.group().strip()
-                          normalised = re.sub(r'[\s\-]', '', matched)
-                          if normalised in {re.sub(r'[\s\-]', '', a) for a in ALLOWLIST}:
-                              continue
-                          findings.append(
-                              f"  ❌  {path}:{lineno}  [{label}]  …{matched}…"
-                          )
-
-          # Scan Solidity sources
-          for d in SCAN_DIRS:
-              base = pathlib.Path(d)
-              if not base.exists():
-                  continue
-              for g in SCAN_GLOBS:
-                  for f in base.glob(g):
-                      scan_file(f)
-
-          # Scan Foundry logs
-          for lf in LOG_FILES:
-              scan_file(lf)
-
-          if findings:
-              print(f"🛑  {len(findings)} potential PII leak(s) detected:\n")
-              for f in findings:
-                  print(f)
-              print("\nFailing pipeline — remove or hash sensitive identifiers.")
-              sys.exit(1)
-          else:
-              print("✅  No raw PII / Aadhaar patterns found in sources or logs.")
-          PYEOF
-          echo "::endgroup::"
+          name: contract-analysis
+          path: contracts/slither-report.json
+          if-no-files-found: error

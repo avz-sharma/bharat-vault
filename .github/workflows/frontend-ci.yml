@@ -1,0 +1,38 @@
+name: Frontend and local acceptance
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26.4.0"
+          cache: npm
+      - run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.9"
+      - run: python -m pip install -r backend/requirements.lock
+      - run: npm run build
+      - run: node scripts/check-bundle.mjs
+      - run: npm run test --workspace frontend
+      - name: Local chain acceptance scenario
+        run: |
+          set -euo pipefail
+          npm run chain > anvil.log 2>&1 &
+          node scripts/wait-rpc.mjs
+          npm run deploy:local
+          npm run demo:test
+          python -m backend.indexer
+          python -m uvicorn backend.app:app --host 127.0.0.1 --port 8000 > api.log 2>&1 &
+          node scripts/wait-api.mjs
+          npm run integration:test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-acceptance
+          path: validation/demo-receipts.json
+          if-no-files-found: error

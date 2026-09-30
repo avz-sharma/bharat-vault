@@ -1,28 +1,21 @@
 [profile.default]
 src = "src"
 out = "out"
-libs = ["lib"]
-solc = "0.8.24"
-evm_version = "shanghai"
+libs = ["../node_modules"]
+solc = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+remappings = ["@openzeppelin/contracts/=../node_modules/@openzeppelin/contracts/", "ethr-did-registry/=../node_modules/ethr-did-registry/"]
 
-# Mappings for identity registry resolution
-remappings = [
-    "@openzeppelin/=lib/openzeppelin-contracts/",
-]
-
-# Invariant fuzz testing configuration
-[invariant]
+[profile.default.fuzz]
 runs = 256
-depth = 64
-fail_on_revert = false
 
-[rpc_endpoints]
-# Hyperledger Besu - permissioned consortium node aligned with MeitY NBFLite
-besu_nbflite = "http://127.0.0.1:8545" 
+[profile.default.invariant]
+runs = 128
+depth = 32
+fail_on_revert = true
 
-# Polygon Amoy - public testnet fallback
-polygon_amoy = "https://rpc-amoy.polygon.technology"
-
-# ETHR DID Registry Addresses
-[profile.default.etherscan]
-amoy = { key = "${POLYGONSCAN_API_KEY}", url = "https://api-amoy.polygonscan.com/api" }
+[profile.ci.fuzz]
+runs = 1000

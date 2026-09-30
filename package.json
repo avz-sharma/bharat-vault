@@ -1,8 +1,38 @@
 {
-  "dependencies": {
-    "@types/node": "^26.6.2",
-    "@zerodev/passkey-validator": "^5.6.0",
-    "@zerodev/sdk": "^5.5.10",
-    "permissionless": "^0.4.1"
+  "name": "bharat-vault",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace frontend",
+    "build": "npm run contracts:build && npm run abi && npm run build --workspace frontend",
+    "test": "npm run contracts:test && npm run test --workspace frontend",
+    "contracts:build": "node scripts/foundry.mjs forge build --root contracts",
+    "contracts:test": "node scripts/foundry.mjs forge test --root contracts -vv",
+    "chain": "node scripts/foundry.mjs anvil --host 127.0.0.1 --chain-id 31337",
+    "abi": "node scripts/export-abi.mjs",
+    "deploy:local": "node scripts/deploy.mjs --local",
+    "demo:test": "node scripts/demo.mjs",
+    "integration:test": "node scripts/integration.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@openzeppelin/contracts": "5.4.0",
+    "ethr-did-registry": "2.0.0",
+    "prettier": "3.6.2"
+  },
+  "optionalDependencies": {
+    "@foundry-rs/anvil-darwin-arm64": "1.7.1",
+    "@foundry-rs/anvil-linux-amd64": "1.7.1",
+    "@foundry-rs/anvil-win32-amd64": "1.7.1",
+    "@foundry-rs/forge-darwin-arm64": "1.7.1",
+    "@foundry-rs/forge-linux-amd64": "1.7.1",
+    "@foundry-rs/forge-win32-amd64": "1.7.1"
   }
 }

@@ -1,6 +1,6 @@
 -- Migration: 001_initial_schema
--- Description: Core tables for IAM and digital asset management adhering to DPDP Act 2023.
--- Note: Real Aadhaar numbers must never be stored. All references must use '[Aadhaar Redacted]'.
+-- Legacy schema retained for migration compatibility. Apply 002 before any use.
+-- This schema does not establish legal compliance. Personal data must stay private.
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -12,7 +12,7 @@ CREATE TABLE credentials (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     holder_did VARCHAR(255) NOT NULL, -- e.g., did:ethr
     issuer_did VARCHAR(255) NOT NULL, -- e.g., did:web
-    sd_jwt_payload TEXT NOT NULL, -- The raw SD-JWT string (contains no PII, Aadhaar is '[Aadhaar Redacted]')
+    sd_jwt_payload TEXT NOT NULL, -- Legacy plaintext payload; migration 002 blocks client access.
     status_list_index INTEGER, -- For on-chain revocation mapping
     is_revoked BOOLEAN DEFAULT FALSE,
     issued_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -26,8 +26,7 @@ CREATE INDEX idx_credentials_holder_did ON credentials(holder_did);
 -- Enable Row Level Security (RLS) on credentials
 ALTER TABLE credentials ENABLE ROW LEVEL SECURITY;
 
--- RLS Policy: Holders can only read their own credentials.
--- Assuming the authenticated user's JWT contains their DID in the 'sub' claim.
+-- Legacy UUID/DID comparison is invalid; migration 002 replaces this policy.
 CREATE POLICY "Holders can view their own credentials"
     ON credentials
     FOR SELECT
@@ -43,7 +42,7 @@ CREATE TABLE audit_events (
     event_type VARCHAR(100) NOT NULL,
     event_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
     recorded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    aadhaar_redacted_field VARCHAR(255) DEFAULT '[Aadhaar Redacted]' -- Explicit confirmation of redaction policy
+    aadhaar_redacted_field VARCHAR(255) DEFAULT '[Aadhaar Redacted]' -- Legacy placeholder; establishes no privacy property.
 );
 
 -- Index for fast tx hash and DID lookups
@@ -53,7 +52,7 @@ CREATE INDEX idx_audit_events_caller_did ON audit_events(caller_did);
 -- Enable Row Level Security (RLS) on audit_events
 ALTER TABLE audit_events ENABLE ROW LEVEL SECURITY;
 
--- RLS Policy: Users can view audit events associated with their DID.
+-- Legacy UUID/DID comparison is invalid; migration 002 replaces this policy.
 CREATE POLICY "Users can view their related audit events"
     ON audit_events
     FOR SELECT

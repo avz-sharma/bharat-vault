@@ -24,11 +24,15 @@ __pycache__/
 env/
 venv/
 .venv/
+.venv-*/
 ENV/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .coverage
+.coverage.*
+coverage/
+*.tsbuildinfo
 htmlcov/
 *.egg-info/
 .installed.cfg
@@ -45,9 +49,17 @@ cache/
 .env
 .env.*
 !.env.example
+!.env.*.example
 *.pem
 *.key
 *.pfx
+*.p12
+*.keystore
+keystore/
+keystores/
+secrets/
+.aws/
+.codex/
 
 # Logs
 *.log
@@ -63,3 +75,23 @@ Desktop.ini
 .vscode/
 *.swp
 *.swo
+
+# Local deployment and test evidence (regenerate for each chain)
+deployments/
+frontend/public/deployments/
+validation/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Local browser-test output
+playwright-report/
+test-results/
+blob-report/
